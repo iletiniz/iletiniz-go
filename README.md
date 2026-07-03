@@ -97,6 +97,28 @@ res, err := client.Messages.Send(ctx, iletiniz.SendMessageParams{
 })
 ```
 
+### Sağlayıcılar-arası fallback
+
+Birincil sağlayıcı mesajı **reddederse** (hard-fail: sağlayıcı hata döner veya bağlantı kurulamaz), aynı mesaj (aynı alıcı, aynı içerik, aynı SMS kanalı) sıradaki yedek sağlayıcıyla otomatik yeniden denenir. İlk **başarıda** durur. `Fallback` en fazla 3 sağlayıcı kodundan oluşan sıralı bir slice'tır; hepsi müşterinin bağlı `kind: sms` sağlayıcıları olmalı ve ne birincil ile ne de birbirleriyle aynı olabilir.
+
+```go
+res, err := client.Messages.Send(ctx, iletiniz.SendMessageParams{
+    To:       "+905551234567",
+    Body:     "Sipariş kodunuz: 4821",
+    Provider: "netgsm",                                 // birincil
+    Fallback: []string{"verimor", "iletimerkezi"},      // sıralı yedekler (max 3)
+})
+
+// res.Provider  → mesajı KABUL eden sağlayıcı
+// res.Attempts  → denenen her sağlayıcı + sonucu (opsiyonel)
+```
+
+> **Kota tek sayım:** Bir mantıksal mesaj, kaç sağlayıcı denenirse denensin **tek** kota harcar; hepsi başarısız olursa hiç kota harcanmaz.
+>
+> **Kapsam:** Yalnızca **reddte (hard-fail)** tetiklenir ve yalnızca **SMS→SMS**'tir (kanallar arası değil, örn. WhatsApp→SMS yok). "Teslim edilemedi / timeout" için otomatik fallback henüz yoktur (gelecek sürüm).
+
+`SendBulk` yanıtında kabul eden sağlayıcı, öğe bazında `DeliveredVia` alanında döner.
+
 ### Template ile göndermek
 
 ```go

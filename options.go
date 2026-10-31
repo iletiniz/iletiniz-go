@@ -70,6 +70,13 @@ type RequestOption func(*requestConfig)
 type requestConfig struct {
 	timeout time.Duration
 	headers map[string]string
+	// noRetry idempotent olmayan istekler için otomatik yeniden denemeyi kapatır.
+	noRetry bool
+}
+
+// withNoRetry iç kullanım: ağ/5xx hatasında isteği yeniden denemez.
+func withNoRetry() RequestOption {
+	return func(r *requestConfig) { r.noRetry = true }
 }
 
 // WithRequestTimeout bu istek için client default'unu ezen timeout.

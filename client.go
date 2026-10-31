@@ -20,7 +20,7 @@ import (
 )
 
 // Version SDK sürümü.
-const Version = "0.1.0"
+const Version = "0.2.0"
 
 const (
 	defaultBaseURL    = "https://api.iletiniz.com"
@@ -36,6 +36,12 @@ type Client struct {
 	Messages *MessagesService
 	// Health sağlık kontrolü servisi.
 	Health *HealthService
+	// Scheduled zamanlanmış gönderimler (`/v1/scheduled`).
+	Scheduled *ScheduledService
+	// Reminders hatırlatma kuralları (`/v1/reminders`).
+	Reminders *RemindersService
+	// Partner partner API'si (`/v1/partner`).
+	Partner *PartnerService
 
 	engine *httpEngine
 }
@@ -93,5 +99,8 @@ func NewClient(apiKey string, opts ...ClientOption) (*Client, error) {
 	c := &Client{engine: engine}
 	c.Messages = &MessagesService{engine: engine}
 	c.Health = &HealthService{engine: engine}
+	c.Scheduled = &ScheduledService{engine: engine}
+	c.Reminders = &RemindersService{engine: engine}
+	c.Partner = &PartnerService{engine: engine}
 	return c, nil
 }

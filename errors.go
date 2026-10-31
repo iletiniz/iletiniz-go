@@ -143,13 +143,28 @@ func buildAPIError(status int, raw []byte, requestID string) *APIError {
 	}
 
 	if len(raw) > 0 {
+		// İki biçim desteklenir:
+		//   {"error": "validation_failed", "message": "..."}
+		//   {"error": {"code": "quota_exceeded", "message": "..."}}
 		var parsed struct {
-			Error   string `json:"error"`
-			Message string `json:"message"`
+			Error   json.RawMessage `json:"error"`
+			Message string          `json:"message"`
 		}
 		if err := json.Unmarshal(raw, &parsed); err == nil {
-			apiErr.Code = parsed.Error
 			apiErr.Message = parsed.Message
+			var code string
+			var nested struct {
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			}
+			if json.Unmarshal(parsed.Error, &code) == nil {
+				apiErr.Code = code
+			} else if json.Unmarshal(parsed.Error, &nested) == nil {
+				apiErr.Code = nested.Code
+				if apiErr.Message == "" {
+					apiErr.Message = nested.Message
+				}
+			}
 		}
 	}
 

@@ -29,9 +29,9 @@ type httpEngine struct {
 
 type attemptOutcome struct {
 	// resp non-nil ise istek tamamlandı (success ya da API hatası).
-	status    int
-	body      []byte
-	requestID string
+	status     int
+	body       []byte
+	requestID  string
 	retryAfter string
 
 	// terminalErr non-nil ise sonlandırıcı bir hata var (TimeoutError/ConnectionError).
@@ -76,7 +76,7 @@ func (e *httpEngine) request(
 		}
 
 		if outcome.transientErr != nil {
-			if e.shouldRetry(0, attempt) {
+			if !cfg.noRetry && e.shouldRetry(0, attempt) {
 				attempt++
 				if !sleep(ctx, e.backoff(attempt, "")) {
 					return &ConnectionError{Message: "context iptal edildi", Cause: ctx.Err()}
@@ -97,7 +97,7 @@ func (e *httpEngine) request(
 			return nil
 		}
 
-		if e.shouldRetry(status, attempt) {
+		if !cfg.noRetry && e.shouldRetry(status, attempt) {
 			attempt++
 			if !sleep(ctx, e.backoff(attempt, outcome.retryAfter)) {
 				return &ConnectionError{Message: "context iptal edildi", Cause: ctx.Err()}

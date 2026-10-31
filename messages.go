@@ -84,8 +84,15 @@ func validateSendParams(p SendMessageParams) error {
 	}
 	hasBody := p.Body != ""
 	hasTemplate := p.Template != ""
-	if hasBody == hasTemplate {
-		return newInvalidRequest("'body' veya 'template' alanlarından tam olarak biri zorunludur")
+	hasWa := p.WhatsappTemplate != nil
+	n := 0
+	for _, b := range []bool{hasBody, hasTemplate, hasWa} {
+		if b {
+			n++
+		}
+	}
+	if n != 1 {
+		return newInvalidRequest("'body', 'template' veya 'whatsappTemplate' alanlarından tam olarak biri zorunludur")
 	}
 	if len(p.Variables) > 0 && !hasTemplate {
 		return newInvalidRequest("'variables' yalnızca 'template' ile birlikte kullanılabilir")
@@ -106,11 +113,22 @@ func validateBulkParams(p SendBulkParams) error {
 		return newInvalidRequest("'items' en fazla %d öğe içerebilir", maxBulkItems)
 	}
 	usingTemplate := p.Template != ""
+	usingWa := p.WhatsappTemplate != nil
+	if usingTemplate && usingWa {
+		return newInvalidRequest("'template' ve 'whatsappTemplate' birlikte kullanılamaz")
+	}
 	for i, item := range p.Items {
 		if l := len(item.To); l < 7 || l > 32 {
 			return newInvalidRequest("items[%d].to 7-32 karakter arasında olmalıdır", i)
 		}
-		if usingTemplate {
+		if len(item.WhatsappComponents) > 0 && !usingWa {
+			return newInvalidRequest("items[%d].whatsappComponents yalnızca 'whatsappTemplate' ile kullanılabilir", i)
+		}
+		if usingWa {
+			if item.Body != "" || len(item.Variables) > 0 {
+				return newInvalidRequest("'whatsappTemplate' verildi: items[%d].body ve variables kullanılamaz", i)
+			}
+		} else if usingTemplate {
 			if item.Body != "" {
 				return newInvalidRequest("üst seviye 'template' verildi: items[%d].body kullanılamaz", i)
 			}

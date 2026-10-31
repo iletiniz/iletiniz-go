@@ -72,6 +72,24 @@ SDK, public API yüzeyini kapsar:
 | `client.Messages.SendBulk(ctx, params)`              | `POST /v1/messages/bulk`          |
 | `client.Messages.Retrieve(ctx, jobID)`               | `GET /v1/messages/{jobID}`        |
 | `client.Messages.Status(ctx, jobID)` (alias)         | `GET /v1/messages/{jobID}`        |
+| `client.Scheduled.List(ctx, params)`                 | `GET /v1/scheduled`               |
+| `client.Scheduled.Retrieve(ctx, id)`                 | `GET /v1/scheduled/{id}`          |
+| `client.Scheduled.Cancel(ctx, id)`                   | `DELETE /v1/scheduled/{id}`       |
+| `client.Reminders.Create(ctx, params)`               | `POST /v1/reminders`              |
+| `client.Reminders.List(ctx, params)`                 | `GET /v1/reminders`               |
+| `client.Reminders.Retrieve(ctx, id)`                 | `GET /v1/reminders/{id}`          |
+| `client.Reminders.Update(ctx, id, params)`           | `PATCH /v1/reminders/{id}`        |
+| `client.Reminders.Delete(ctx, id)`                   | `DELETE /v1/reminders/{id}`       |
+| `client.Partner.Profile(ctx)`                        | `GET /v1/partner`                 |
+| `client.Partner.CreateAccount(ctx, params)`          | `POST /v1/partner/accounts`       |
+| `client.Partner.ListAccounts(ctx, params)`           | `GET /v1/partner/accounts`        |
+| `client.Partner.RetrieveAccount(ctx, id)`            | `GET /v1/partner/accounts/{id}`   |
+| `client.Partner.SuspendAccount` / `UnsuspendAccount` | `POST /v1/partner/accounts/{id}/suspend` / `unsuspend` |
+| `client.Partner.CreateAPIKey(ctx, id, params)`       | `POST /v1/partner/accounts/{id}/api-keys` |
+| `client.Partner.ListAPIKeys(ctx, id)`                | `GET /v1/partner/accounts/{id}/api-keys` |
+| `client.Partner.RevokeAPIKey(ctx, id, keyID)`        | `DELETE /v1/partner/accounts/{id}/api-keys/{keyId}` |
+| `client.Partner.TransferQuota(ctx, id, amount)`      | `POST /v1/partner/accounts/{id}/quota-transfers` |
+| `client.Partner.CreateWhatsappSignupLink(ctx, id)`   | `POST /v1/partner/accounts/{id}/whatsapp-signup` |
 
 ### Tek mesaj göndermek
 
@@ -156,6 +174,92 @@ res, err = client.Messages.SendBulk(ctx, iletiniz.SendBulkParams{
     },
 })
 ```
+
+### Onaylı WhatsApp şablonu göndermek
+
+Meta'da onaylanmış (APPROVED) şablonu `WhatsappTemplate` ile gönderin. `Components`, Meta Cloud API'nin `template.components` biçimini izler. WhatsApp'ta `Sender`, gönderici numaranın Meta `phone_number_id` değeridir.
+
+```go
+res, err := client.Messages.Send(ctx, iletiniz.SendMessageParams{
+    To:       "+905551234567",
+    Provider: "whatsapp",
+    Sender:   "123456789012345",
+    WhatsappTemplate: &iletiniz.WhatsappTemplate{
+        Name:     "randevu_hatirlatma",
+        Language: "tr",
+        Components: []map[string]any{
+            {"type": "body", "parameters": []map[string]any{
+                {"type": "text", "text": "Ayşe"},
+                {"type": "text", "text": "5 Kasım 10:00"},
+            }},
+        },
+    },
+})
+```
+
+Toplu gönderimde alıcı başına değişkenler `BulkItemInput.WhatsappComponents` ile verilir.
+
+### Zamanlanmış gönderim
+
+`ScheduledAt` (saat dilimli RFC 3339, en az 30 sn, en fazla 90 gün sonrası) verilirse mesaj şimdi gönderilmez; yanıtta `Status == "scheduled"` ve `ScheduledID` döner.
+
+```go
+job, err := client.Messages.Send(ctx, iletiniz.SendMessageParams{
+    To:          "+905551234567",
+    Body:        "Yarınki randevunuzu hatırlatırız.",
+    ScheduledAt: time.Date(2026, 11, 5, 9, 0, 0, 0, istanbul).Format(time.RFC3339),
+})
+list, err := client.Scheduled.List(ctx, iletiniz.ListParams{Status: "scheduled"})
+_, err = client.Scheduled.Cancel(ctx, job.ScheduledID)
+```
+
+### Hatırlatma kuralları
+
+```go
+// Randevudan 24 saat ve 2 saat önce
+_, err := client.Reminders.Create(ctx, iletiniz.CreateReminderParams{
+    Type:           "one_time",
+    Name:           "Randevu #4411",
+    EventAt:        "2026-11-10T14:00:00+03:00",
+    OffsetsMinutes: []int{1440, 120},
+    Message:        iletiniz.ReminderMessage{To: "+905551234567", Body: "Randevunuz 10 Kasım 14:00."},
+})
+
+// Her pazartesi 09:30 (Europe/Istanbul)
+monday := 1
+rule, err := client.Reminders.Create(ctx, iletiniz.CreateReminderParams{
+    Type: "recurring", Name: "Haftalık bülten",
+    Frequency: "weekly", DayOfWeek: &monday, TimeOfDay: "09:30",
+    Message: iletiniz.ReminderMessage{To: "+905551234567", Template: "haftalik_bulten"},
+})
+_, err = client.Reminders.Update(ctx, rule.ID, iletiniz.UpdateReminderParams{Status: "paused"})
+_, err = client.Reminders.Delete(ctx, rule.ID)
+```
+
+### Partner API
+
+Partner hesabının `partner:manage` yetkili canlı anahtarıyla:
+
+```go
+partner, _ := iletiniz.NewClient(os.Getenv("ILETINIZ_PARTNER_KEY"))
+
+child, err := partner.Partner.CreateAccount(ctx, iletiniz.CreateChildAccountParams{Name: "Klinik Ankara", ExternalRef: "klinik-42"})
+key, err := partner.Partner.CreateAPIKey(ctx, child.ID, iletiniz.CreateChildAPIKeyParams{Name: "prod"})
+// key.Key yalnız bu yanıtta döner; güvenli şekilde saklayın.
+
+// Alt hesabın anahtarlarını listeleyin (düz metin anahtar dönmez, yalnız KeyPrefix) ve gerekirse iptal edin:
+keys, err := partner.Partner.ListAPIKeys(ctx, child.ID)
+_, err = partner.Partner.RevokeAPIKey(ctx, child.ID, keys.Data[0].ID) // idempotent: iptal edilmişse aynı nesne döner
+
+_, err = partner.Partner.TransferQuota(ctx, child.ID, 5000)
+link, err := partner.Partner.CreateWhatsappSignupLink(ctx, child.ID)
+// link.URL müşterinize iletilir (24 saat geçerli, tek kullanımlık).
+
+// Alt hesap adına gönderim alt hesabın anahtarıyla yapılır:
+childClient, _ := iletiniz.NewClient(key.Key)
+```
+
+`TransferQuota`, `CreateAccount` ve `CreateAPIKey` hata durumunda otomatik yeniden denenmez.
 
 ### Mesaj durumunu sorgulamak
 
